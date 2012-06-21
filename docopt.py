@@ -1,3 +1,4 @@
+from copy import copy
 import sys
 import re
 
@@ -24,10 +25,20 @@ class DocoptExit(SystemExit):
         SystemExit.__init__(self, (message + '\n' + self.usage).strip())
 
 
-class Pattern(object):
+class Node(object):
+    def next(self, args, collected):
+        return None
 
-    def __init__(self, *children):
-        self.children = list(children)
+
+class Fragment(object):
+    def __init__(self):
+        self.tails = []
+
+    def patch(self, node):
+        raise NotImplementedError()
+
+    def assemble(self):
+        raise NotImplementedError()
 
     def __eq__(self, other):
         return repr(self) == repr(other)
@@ -35,39 +46,24 @@ class Pattern(object):
     def __hash__(self):
         return hash(repr(self))
 
-    def __repr__(self):
-        return '%s(%s)' % (self.__class__.__name__,
-                           ', '.join(repr(a) for a in self.children))
-
     @property
     def flat(self):
         if not hasattr(self, 'children'):
             return [self]
         return sum([c.flat for c in self.children], [])
 
-    def fix(self):
-        self.fix_identities()
-        self.fix_list_arguments()
-        return self
-
-    def fix_identities(self, uniq=None):
-        """Make pattern-tree tips point to same object if they are equal."""
-        if not hasattr(self, 'children'):
-            return self
-        uniq = list(set(self.flat)) if uniq == None else uniq
-        for i, c in enumerate(self.children):
-            if not hasattr(c, 'children'):
-                assert c in uniq
-                self.children[i] = uniq[uniq.index(c)]
-            else:
-                c.fix_identities(uniq)
-
+    def __repr__(self):
+        if hasattr(self, 'children'):
+            return '%s(%s)' % (self.__class__.__name__, ', '.join(repr(c) for c in self.children))
+        else:
+            return '%s()' % self.__class__.__name__
+    
     def fix_list_arguments(self):
         """Find arguments that should accumulate values and fix them."""
         either = [list(c.children) for c in self.either.children]
         for case in either:
             case = [c for c in case if case.count(c) > 1]
-            for a in [e for e in case if type(e) == Argument]:
+            for a in [e for e in case if isinstance(e, Argument)]:
                 a.value = []
         return self
 
@@ -106,56 +102,119 @@ class Pattern(object):
             return Either(*[Required(*e) for e in ret])
 
 
-class Argument(Pattern):
+class Literal(Node, Fragment):
+    def __init__(self):
+        Node.__init__(self)
+        Fragment.__init__(self)
+        self._next = None
 
-    def __init__(self, name, value=None):
-        self.name = name
-        self.value = value
+    def next(self, args, collected):
+        return self._next
 
-    def match(self, left, collected=None):
-        collected = [] if collected is None else collected
-        args = [l for l in left if type(l) is Argument]
-        if not len(args):
-            return False, left, collected
-        pos = left.index(args[0])
-        left = left[:pos] + left[pos+1:]
-        if type(self.value) is not list:
-            return True, left, collected + [Argument(self.name, args[0].value)]
-        same_name = [a for a in collected
-                     if type(a) is Argument and a.name == self.name]
-        if len(same_name):
-            same_name[0].value += [args[0].value]
-            return True, left, collected
+    def patch(self, node):
+        if not self._next:
+            self._next = node
         else:
-            return True, left, collected + [Argument(self.name,
-                                                     [args[0].value])]
+            for tail in self.tails:
+                tail.patch(node)
+        self.tails = [node]
+
+    def assemble(self):
+        return self
+
+
+class Split(Literal):
+    def __init__(self, out1=None, out2=None):
+        Fragment.__init__(self)
+        self.out1 = out1
+        self.out2 = out2
+        self._is_recursive = False
+
+    def patch(self, node):
+        if not self.out1:
+            self.out1 = node
+        if not self.out2:
+            self.out2 = node
+        for tail in self.tails:
+            tail.patch(node)
+        self.tails = [node]
+
+    @property
+    def flat(self):
+        raise RuntimeError("Flat not computable after pattern is built.")
 
     def __repr__(self):
-        return 'Argument(%r, %r)' % (self.name, self.value)
+        if self._is_recursive:
+            return 'Split(RecursiveNode, %r)' % (self.out2)
+        else:
+            return 'Split(%r, %r)' % (self.out1, self.out2)
 
 
-class Command(Pattern):
-
-    def __init__(self, name, value=False):
+class Argument(Literal):
+    def __init__(self, name, value=None):
+        Literal.__init__(self)
         self.name = name
         self.value = value
 
-    def match(self, left, collected=None):
-        collected = [] if collected is None else collected
-        args = [l for l in left if type(l) is Argument]
-        if not len(args) or args[0].value != self.name:
-            return False, left, collected
-        pos = left.index(args[0])
-        left = left[:pos] + left[pos+1:]
-        return True, left, collected + [Command(self.name, True)]
+    def next(self, args, collected):
+        if not args:
+            return None
+
+        for i, arg in enumerate(args):
+            if isinstance(arg, Argument):
+                args.pop(i)
+                if isinstance(self.value, list):
+                    found = False
+                    for i, v in enumerate(collected):
+                        if not isinstance(v, Argument) or v.name != self.name:
+                            continue
+                        collected[i] = Argument(self.name, v.value + [arg.value])
+                        found = True
+                        break
+                    if not found:
+                        collected.append(Argument(self.name, [arg.value]))
+                else:
+                    collected.append(Argument(self.name, arg.value))
+                return Literal.next(self, args, collected)
+        return None
 
     def __repr__(self):
-        return 'Command(%r, %r)' % (self.name, self.value)
+        return '%s(%r, %r)' % (self.__class__.__name__, self.name, self.value)
 
 
-class Option(Pattern):
+class Command(Literal):
+    #TODO: Refactor using Argument base
+    def __init__(self, name, value=False):
+        Literal.__init__(self)
+        self.name = name
+        self.value = value
 
+    def next(self, args, collected):
+        if not args:
+            return None
+
+        for i, arg in enumerate(args):
+            if isinstance(arg, Argument):
+                if arg.value == self.name:
+                    args.pop(i)
+                    collected.append(Command(self.name, True))
+                    return Literal.next(self, args, collected)
+                else:
+                    return None
+        return None
+
+    def __repr__(self):
+        return '%s(%r, %r)' % (self.__class__.__name__, self.name, self.value)
+
+
+class End(Node):
+    def patch(self, node):
+        pass
+
+
+class Option(Literal):
     def __init__(self, short=None, long=None, argcount=0, value=False):
+        Literal.__init__(self)
         assert argcount in (0, 1)
         self.short, self.long = short, long
         self.argcount, self.value = argcount, value
@@ -178,15 +237,21 @@ class Option(Pattern):
             value = matched[0] if matched else None
         return class_(short, long, argcount, value)
 
-    def match(self, left, collected=None):
-        collected = [] if collected is None else collected
-        left_ = []
-        for l in left:
-            # if this is so greedy, how to handle OneOrMore then?
-            if not (type(l) is Option and
-                    (self.short, self.long) == (l.short, l.long)):
-                left_.append(l)
-        return (left != left_), left_, collected
+    def next(self, args, collected):
+        i = len(args) - 1
+        found = False
+        while i >= 0:
+            arg = args[i]
+            if isinstance(arg, Option):
+                if (self.short, self.long) == (arg.short, arg.long):
+                    # collected.append(self)
+                    args.pop(i)
+                    found = True
+            i -= 1
+        if found:
+            return Literal.next(self, args, collected)
+        else:
+            return None
 
     @property
     def name(self):
@@ -197,70 +262,99 @@ class Option(Pattern):
                                            self.argcount, self.value)
 
 
-class AnyOptions(Pattern):
-
-    def match(self, left, collected=None):
-        collected = [] if collected is None else collected
-        left_ = [l for l in left if not type(l) == Option]
-        return (left != left_), left_, collected
-
-
-class Required(Pattern):
-
-    def match(self, left, collected=None):
-        collected = [] if collected is None else collected
-        l = left
-        c = collected
-        for p in self.children:
-            matched, l, c = p.match(l, c)
-            if not matched:
-                return False, left, collected
-        return True, l, c
+class AnyOptions(Literal):
+    def next(self, args, collected):
+        i = len(args) - 1
+        found = False
+        while i >= 0:
+            arg = args[i]
+            if isinstance(arg, Option):
+                args.pop(i)
+                found = True
+            i -= 1
+        if found:
+            return Literal.next(self, args, collected)
+        else:
+            return None
 
 
-class Optional(Pattern):
+class Required(Fragment):
+    def __init__(self, *children):
+        Fragment.__init__(self)
+        self.children = children
 
-    def match(self, left, collected=None):
-        collected = [] if collected is None else collected
-        for p in self.children:
-            m, left, collected = p.match(left, collected)
-        return True, left, collected
-
-
-class OneOrMore(Pattern):
-
-    def match(self, left, collected=None):
-        assert len(self.children) == 1
-        collected = [] if collected is None else collected
-        l = left
-        c = collected
-        l_ = None
-        matched = True
-        times = 0
-        while matched:
-            # could it be that something didn't match but changed l or c?
-            matched, l, c = self.children[0].match(l, c)
-            times += 1 if matched else 0
-            if l_ == l:
-                break
-            l_ = l
-        if times >= 1:
-            return True, l, c
-        return False, left, collected
+    def assemble(self):
+        assembled = [c.assemble() for c in self.children]
+        if not assembled:
+            return Literal()
+        root = assembled[0]
+        previous = root
+        for node in assembled[1:]:
+            previous.patch(node)
+            previous = node
+        return root
 
 
-class Either(Pattern):
+class Optional(Fragment):
+    def __init__(self, *children):
+        Fragment.__init__(self)
+        self.children = children
 
-    def match(self, left, collected=None):
-        collected = [] if collected is None else collected
-        outcomes = []
-        for p in self.children:
-            matched, _, _ = outcome = p.match(left, collected)
-            if matched:
-                outcomes.append(outcome)
-        if outcomes:
-            return min(outcomes, key=lambda outcome: len(outcome[1]))
-        return False, left, collected
+    def assemble(self):
+        assert self.children
+        if len(self.children) > 1:
+            #Optional must apply to children individually
+            root = Required(*[Optional(c) for c in self.children])
+            return root.assemble()
+        else:
+            split = Split()
+            split.out1 = self.children[0].assemble()
+            split.tails = [split.out1]
+            return split
+
+
+class OneOrMore(Fragment):
+    def __init__(self, *children):
+        Fragment.__init__(self)
+        self.children = children
+
+    def assemble(self):
+        assert self.children
+
+        #Group multiple children into a Required node
+        if len(self.children) > 1:
+            res = Required(*self.children)
+        else:
+            res = self.children[0]
+
+        res = res.assemble()
+        #Extra node to prevent recursion when res is a Split
+        dummy = Literal()
+        dummy.patch(res)
+        dummy = dummy.assemble()
+        split = Split()
+        split.out1 = dummy
+        split._is_recursive = True
+        assert not split.tails
+        res.patch(split)
+        return res
+
+
+class Either(Fragment):
+    def __init__(self, *children):
+        Fragment.__init__(self)
+        self.children = children
+
+    def assemble(self):
+        assembled = [c.assemble() for c in self.children]
+        assert assembled
+        assert len(assembled) > 1
+        previous = Split(assembled[-2], assembled[-1])
+        previous.tails = [assembled[-2], assembled[-1]]
+        for node in assembled[:-2]:
+            previous = Split(node, previous)
+            previous.tails = [node, previous.out2]
+        return previous
 
 
 class TokenStream(list):
@@ -404,6 +498,7 @@ def parse_atom(tokens, options):
 
 def parse_args(source, options):
     tokens = TokenStream(source, DocoptExit)
+    # options = copy(options)
     parsed = []
     while tokens.current() is not None:
         if tokens.current() == '--':
@@ -450,16 +545,51 @@ class Dict(dict):
         return '{%s}' % ',\n '.join('%r: %r' % i for i in sorted(self.items()))
 
 
+def build_pattern(pattern):
+    pattern = pattern.assemble()
+    pattern.patch(End())
+    return pattern
+
+
+def traverse(root, args):
+    next = []
+
+    def append(next, node, args, collected):
+        if isinstance(node, Split):
+            append(next, node.out1, args, collected)
+            append(next, node.out2, copy(args), copy(collected))
+        else:
+            next.append((node, args, collected))
+
+    append(next, root, copy(args), [])
+    current = next
+
+    while current:
+        next = []
+        for node, args, collected in current:
+            if isinstance(node, End) and not args:
+                return collected
+            next_node = node.next(args, collected)
+            if next_node:
+                append(next, next_node, args, collected)
+        current = next
+
+    return False
+
+
 def docopt(doc, argv=sys.argv[1:], help=True, version=None):
     DocoptExit.usage = docopt.usage = usage = printable_usage(doc)
     pot_options = parse_doc_options(doc)
-    formal_pattern = parse_pattern(formal_usage(usage), options=pot_options)
+    root_node = parse_pattern(formal_usage(usage), options=pot_options)
+    flat = root_node.flat  # Must be retrieved before pattern is built
+    root_node.fix_list_arguments()
+    root_node = build_pattern(root_node)
     argv = parse_args(argv, options=pot_options)
     extras(help, version, argv, doc)
-    matched, left, arguments = formal_pattern.fix().match(argv)
-    if matched and left == []:  # better message if left?
+    arguments = traverse(root_node, argv)
+    if arguments is not False:
         options = [o for o in argv if type(o) is Option]
-        pot_arguments = [a for a in formal_pattern.flat
+        pot_arguments = [a for a in flat
                          if type(a) in [Argument, Command]]
         return Dict((a.name, a.value) for a in
                     (pot_options + options + pot_arguments + arguments))
