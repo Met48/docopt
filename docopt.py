@@ -25,12 +25,8 @@ class DocoptExit(SystemExit):
         SystemExit.__init__(self, (message + '\n' + self.usage).strip())
 
 
-class Node(object):
-    def next(self, args, collected):
-        return None
-
-
 class Fragment(object):
+
     def __init__(self):
         self.tails = []
 
@@ -38,6 +34,9 @@ class Fragment(object):
         raise NotImplementedError()
 
     def assemble(self):
+        raise NotImplementedError()
+
+    def next(self, args, collected):
         raise NotImplementedError()
 
     def __eq__(self, other):
@@ -61,10 +60,30 @@ class Fragment(object):
     def fix_list_arguments(self):
         """Find arguments that should accumulate values and fix them."""
         either = [list(c.children) for c in self.either.children]
+        repeats = set()
+        nodes_by_repr = {}
+
+        #Index all nodes by repr
         for case in either:
-            case = [c for c in case if case.count(c) > 1]
-            for a in [e for e in case if isinstance(e, Argument)]:
-                a.value = []
+            nodes_in_case = set()
+
+            for child in case:
+                if not isinstance(child, Argument):
+                    continue
+
+                #Check if node has repeated within case
+                if child in nodes_in_case:
+                    repeats.add(child)
+                else:
+                    nodes_in_case.add(child)
+
+                nodes_by_repr[child] = nodes_by_repr.get(child, []) + [child]
+
+        #Update value of nodes that re-occur
+        for node in repeats:
+            for node in nodes_by_repr[node]:
+                node.value = []
+
         return self
 
     @property
@@ -102,9 +121,9 @@ class Fragment(object):
             return Either(*[Required(*e) for e in ret])
 
 
-class Literal(Node, Fragment):
+class Literal(Fragment):
+
     def __init__(self):
-        Node.__init__(self)
         Fragment.__init__(self)
         self._next = None
 
@@ -124,6 +143,7 @@ class Literal(Node, Fragment):
 
 
 class Split(Literal):
+
     def __init__(self, out1=None, out2=None):
         Fragment.__init__(self)
         self.out1 = out1
@@ -151,6 +171,7 @@ class Split(Literal):
 
 
 class Argument(Literal):
+
     def __init__(self, name, value=None):
         Literal.__init__(self)
         self.name = name
@@ -165,10 +186,10 @@ class Argument(Literal):
                 args.pop(i)
                 if isinstance(self.value, list):
                     found = False
-                    for i, v in enumerate(collected):
+                    for v in collected:
                         if not isinstance(v, Argument) or v.name != self.name:
                             continue
-                        collected[i] = Argument(self.name, v.value + [arg.value])
+                        v.value.append(arg.value)
                         found = True
                         break
                     if not found:
@@ -183,6 +204,7 @@ class Argument(Literal):
 
 
 class Command(Literal):
+
     #TODO: Refactor using Argument base
     def __init__(self, name, value=False):
         Literal.__init__(self)
@@ -207,12 +229,17 @@ class Command(Literal):
         return '%s(%r, %r)' % (self.__class__.__name__, self.name, self.value)
 
 
-class End(Node):
+class End(Fragment):
+
+    def next(self, args, collected):
+        return None
+
     def patch(self, node):
         pass
 
 
 class Option(Literal):
+
     def __init__(self, short=None, long=None, argcount=0, value=False):
         Literal.__init__(self)
         assert argcount in (0, 1)
@@ -263,6 +290,7 @@ class Option(Literal):
 
 
 class AnyOptions(Literal):
+
     def next(self, args, collected):
         i = len(args) - 1
         found = False
@@ -278,10 +306,14 @@ class AnyOptions(Literal):
             return None
 
 
-class Required(Fragment):
+class Container(Fragment):
+
     def __init__(self, *children):
         Fragment.__init__(self)
         self.children = children
+
+
+class Required(Container):
 
     def assemble(self):
         assembled = [c.assemble() for c in self.children]
@@ -295,10 +327,7 @@ class Required(Fragment):
         return root
 
 
-class Optional(Fragment):
-    def __init__(self, *children):
-        Fragment.__init__(self)
-        self.children = children
+class Optional(Container):
 
     def assemble(self):
         assert self.children
@@ -313,10 +342,7 @@ class Optional(Fragment):
             return split
 
 
-class OneOrMore(Fragment):
-    def __init__(self, *children):
-        Fragment.__init__(self)
-        self.children = children
+class OneOrMore(Container):
 
     def assemble(self):
         assert self.children
@@ -340,10 +366,7 @@ class OneOrMore(Fragment):
         return res
 
 
-class Either(Fragment):
-    def __init__(self, *children):
-        Fragment.__init__(self)
-        self.children = children
+class Either(Container):
 
     def assemble(self):
         assembled = [c.assemble() for c in self.children]
