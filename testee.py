@@ -5,6 +5,6 @@ import sys, json
 doc = sys.stdin.read()
 
 try:
-    print json.dumps(docopt(doc))
+    print(json.dumps(docopt(doc)))
 except DocoptExit:
-    print '"user-error"'
+    print('"user-error"')

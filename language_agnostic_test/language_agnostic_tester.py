@@ -588,46 +588,79 @@ $ prog -op
 {"-o": true, "-p": true, "-r": false}
 
 '''
-import sys, json
+#Simplejson is needed for Py2.5
+try:
+    import json
+except ImportError:
+    import simplejson as json
+import sys
 from subprocess import Popen, PIPE, STDOUT
 
 
-testee = (sys.argv[1] if len(sys.argv) >= 2 else
-        exit('Usage: language_agnostic_tester.py ./path/to/executable/testee [ID ...]'))
-ids = [int(x) for x in sys.argv[2:]] if len(sys.argv) > 2 else None
-summary = ''
+def generate_cases(ids=None):
+    #This is a generator to support integration with py.test
+    index = 0
+    for fixture in __doc__.split('r"""'):
+        doc, _, body = fixture.partition('"""')
+        for case in body.split('$')[1:]:
+            index += 1
+            if ids is not None and index not in ids:
+                continue
+            argv, _, expect = case.strip().partition('\n')
+            prog, _, argv = argv.strip().partition(' ')
+            assert prog == 'prog', repr(prog)
 
-index = 0
-for fixture in __doc__.split('r"""'):
-    doc, _, body = fixture.partition('"""')
-    for case in body.split('$')[1:]:
-        index += 1
-        if ids is not None and index not in ids:
-            continue
-        argv, _, expect = case.strip().partition('\n')
-        prog, _, argv = argv.strip().partition(' ')
-        assert prog == 'prog', repr(prog)
-        p = Popen(testee + ' ' + argv,
-                  stdout=PIPE, stdin=PIPE, stderr=STDOUT, shell=True)
-        result = p.communicate(input=doc)[0]
+            yield index, argv, doc, expect
+
+
+def check_case(testee, argv, doc, expect):
+    p = Popen(testee + ' ' + argv,
+              stdout=PIPE, stdin=PIPE, stderr=STDOUT, shell=True)
+    #Encode and decode needed for bytes conversion in Py3k
+    result = p.communicate(input=doc.encode())[0].decode()
+
+    py_result = json.loads(result)
+    py_expect = json.loads(expect)
+
+    assert py_result == py_expect, py_result
+
+
+def main(testee, ids):
+    summary = ''
+    for index, argv, doc, expect in generate_cases(ids):
         try:
-            py_result = json.loads(result)
-            py_expect = json.loads(expect)
+            check_case(testee, argv, doc, expect)
         except:
-            summary += 'J'
-            print (' %d: BAD JSON ' % index).center(79, '=')
-            print 'result>', result
-            print 'expect>', expect
-            continue
-        if py_result == py_expect:
-            summary += '.'
-        else:
-            print (' %d: FAILED ' % index).center(79, '=')
-            print 'r"""%s"""' % doc
-            print '$ prog %s\n' % argv
-            print 'result>', result
-            print 'expect>', expect
-            summary += 'F'
+            #Compatibility, 2.5 through 3.x
+            #This is the only way to support 2.5 (can't use "Exception as e")
+            # and 3.x (can't use "Exception, e")
+            ExceptionClass, e = sys.exc_info()[:2]
 
-print (' %d / %d ' % (summary.count('.'), len(summary))).center(79, '=')
-print summary
+            if ExceptionClass is AttributeError:
+                summary += 'F'
+                print((' %d: FAILED ' % index).center(79, '='))
+                print('r"""%s"""' % doc)
+                print('$ prog %s\n' % argv)
+                print('result>' + str(e))
+                print('expect>' + expect)
+            else:
+                summary += 'J'
+                print((' %d: BAD JSON ' % index).center(79, '='))
+                print('r"""%s"""' % doc)
+                print('$ prog %s\n' % argv)
+                print('result>' + str(e))
+                print('expect>' + expect)
+        else:
+            summary += '.'
+
+    print((' %d / %d ' % (summary.count('.'), len(summary))).center(79, '='))
+    print(summary)
+
+
+if __name__ == '__main__':
+    testee = (sys.argv[1] if len(sys.argv) >= 2 else
+            exit('Usage: language_agnostic_tester.py ./path/to/executable/testee [ID ...]'))
+    ids = [int(x) for x in sys.argv[2:]] if len(sys.argv) > 2 else None
+
+    main(testee, ids)
+
