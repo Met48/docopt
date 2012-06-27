@@ -170,7 +170,7 @@ def test_option_match():
     assert match(Option('-a'), [Option('-x')]) == False
     assert match(Option('-a'), [Argument('N')]) == False
     assert match(Option('-a'), [Option('-x'), Option('-a'), Argument('N')]) == \
-            False  # []
+            False
     assert match(Option('-a', None, False), [Option('-a', None, False)]) == \
             []
 
@@ -179,17 +179,16 @@ def test_argument_match():
     assert match(Argument('N'), [Argument(None, 9)]) == [Argument('N', 9)]
     assert match(Argument('N'), [Option('-x')]) == False
     assert match(Argument('N'), [Option('-x'), Option('-a'), Argument(None, 5)])\
-            == False  # [Argument('N', 5)]
+            == False
     assert match(Argument('N'), [Argument(None, 9), Argument(None, 0)]) == \
-            False  # [Argument('N', 9)]
+            False
 
 
 def test_command_match():
     assert match(Command('c'), [Argument(None, 'c')]) == [Command('c', True)]
-    assert match(Command('c'), [Option('-x')]) == False  # , [Option('-x')], [])
+    assert match(Command('c'), [Option('-x')]) == False
     assert match(Command('c'), [Option('-x'), Option('-a'),
                                Argument(None, 'c')]) == False
-            # True, [Option('-x'), Option('-a')], [Command('c', True)])
     assert match(Either(Command('add', False), Command('rm', False)),
             [Argument(None, 'rm')]) == [Command('rm', True)]
 
@@ -198,11 +197,9 @@ def test_optional_match():
     assert match(Optional(Option('-a')), [Option('-a')]) == []
     assert match(Optional(Option('-a')), []) == []
     assert match(Optional(Option('-a')), [Option('-x')]) == False
-            # True, [Option('-x')], [])
     assert match(Optional(Option('-a'), Option('-b')), [Option('-a')]) == []
     assert match(Optional(Option('-a'), Option('-b')), [Option('-b')]) == []
     assert match(Optional(Option('-a'), Option('-b')), [Option('-x')]) == False
-            # True, [Option('-x')], [])
     assert match(Optional(Argument('N')), [Argument(None, 9)]) == (
             [Argument('N', 9)])
 
@@ -211,56 +208,24 @@ def test_required_match():
     assert match(Required(Option('-a')), [Option('-a')]) == []
     assert match(Required(Option('-a')), []) == False
     assert match(Required(Option('-a')), [Option('-x')]) == False
-            # False, [Option('-x')], [])
     assert match(Required(Option('-a'), Option('-b')), [Option('-a')]) == False
-            # False, [Option('-a')], [])
     assert match(Optional(Option('-a'), Option('-b')),
             [Option('-b'), Option('-x'), Option('-a')]) == False
-                    # True, [Option('-x')], [])
 
 
 def test_either_match():
     assert match(Either(Option('-a'), Option('-b')),
             [Option('-a')]) == []
     assert match(Either(Option('-a'), Option('-b')),
-            [Option('-a'), Option('-b')]) == False  # (True, [Option('-b')], [])
+            [Option('-a'), Option('-b')]) == False
     assert match(Either(Option('-a'), Option('-b')),
-            [Option('-x')]) == False  # (False, [Option('-x')], [])
+            [Option('-x')]) == False
     assert match(Either(Option('-a'), Option('-b'), Option('-c')),
-            [Option('-x'), Option('-b')]) == False  # (True, [Option('-x')], [])
+            [Option('-x'), Option('-b')]) == False
     assert match(Either(Argument('M'),
                   Required(Argument('N'), Argument('M'))),
                                    [Argument(None, 1), Argument(None, 2)]) == \
             [Argument('N', 1), Argument('M', 2)]
-
-
-# def test_one_or_more_match():
-#     #These tests rely on the behaviour WITHOUT fix_list_arguments
-#     #TODO: Use match method which does not fix for list arguments
-#     assert match(OneOrMore(Argument('N')), [Argument(None, 9)]) == (
-#             [Argument('N', 9)])
-#     assert match(OneOrMore(Argument('N')), []) == False
-#     assert match(OneOrMore(Argument('N')), [Option('-x')]) == False
-#             # (False, [Option('-x')], [])
-#     assert match(OneOrMore(Argument('N')),
-#             [Argument(None, 9), Argument(None, 8)]) == (
-#                     [Argument('N', 9), Argument('N', 8)])
-#     assert match(OneOrMore(Argument('N')),
-#             [Argument(None, 9), Option('-x'), Argument(None, 8)]) == (
-#                     [Argument('N', 9), Argument('N', 8)])
-#                     #True, [Option('-x')], [Argument('N', 9), Argument('N', 8)])
-#     assert match(OneOrMore(Option('-a')),
-#             [Option('-a'), Argument(None, 8), Option('-a')]) == []
-#                     # True, [Argument(None, 8)], [])
-#     assert match(OneOrMore(Option('-a')), [Argument(None, 8), Option('-x')]) == []
-#                     # False, [Argument(None, 8), Option('-x')], [])
-# #   NOTE, Option is greedy, nothing to match second time
-# #   assert match(OneOrMore(Required(Option('-a'), Argument('N'))),
-# #           [Option('-a'), Argument(None, 1), Option('-x'),
-# #            Option('-a'), Argument(None, 2)]) == \
-# #                    (True, [Option('-x')], [Argument('N', 1), Argument('N', 2)])
-#     assert match(OneOrMore(Optional(Argument('N'))), [Argument(None, 9)]) == \
-#                     [Argument('N', 9)]
 
 
 def test_list_argument_match():
@@ -295,9 +260,7 @@ def test_basic_pattern_matching():
     assert traverse(pattern, [Option('-x'),
                           Argument(None, 9),
                           Argument(None, 5)]) == False
-                                # False, [Option('-x'),
-                                #         Argument(None, 9),
-                                #         Argument(None, 5)], [])
+
 
 def test_pattern_any_option():
     assert match(AnyOptions(), [Option('-a')]) == []
