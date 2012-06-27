@@ -1,4 +1,4 @@
-from copy import copy
+from copy import copy, deepcopy
 import sys
 import re
 
@@ -580,7 +580,7 @@ def traverse(root, args):
     def append(next, node, args, collected):
         if isinstance(node, Split):
             append(next, node.out1, args, collected)
-            append(next, node.out2, copy(args), copy(collected))
+            append(next, node.out2, copy(args), deepcopy(collected))
         else:
             next.append((node, args, collected))
 
