@@ -234,33 +234,33 @@ def test_either_match():
             [Argument('N', 1), Argument('M', 2)]
 
 
-def test_one_or_more_match():
-    #These tests rely on the behaviour WITHOUT fix_list_arguments
-    #TODO: Use match method which does not fix for list arguments
-    assert match(OneOrMore(Argument('N')), [Argument(None, 9)]) == (
-            [Argument('N', 9)])
-    assert match(OneOrMore(Argument('N')), []) == False
-    assert match(OneOrMore(Argument('N')), [Option('-x')]) == False
-            # (False, [Option('-x')], [])
-    assert match(OneOrMore(Argument('N')),
-            [Argument(None, 9), Argument(None, 8)]) == (
-                    [Argument('N', 9), Argument('N', 8)])
-    assert match(OneOrMore(Argument('N')),
-            [Argument(None, 9), Option('-x'), Argument(None, 8)]) == (
-                    [Argument('N', 9), Argument('N', 8)])
-                    #True, [Option('-x')], [Argument('N', 9), Argument('N', 8)])
-    assert match(OneOrMore(Option('-a')),
-            [Option('-a'), Argument(None, 8), Option('-a')]) == []
-                    # True, [Argument(None, 8)], [])
-    assert match(OneOrMore(Option('-a')), [Argument(None, 8), Option('-x')]) == []
-                    # False, [Argument(None, 8), Option('-x')], [])
-#   NOTE, Option is greedy, nothing to match second time
-#   assert match(OneOrMore(Required(Option('-a'), Argument('N'))),
-#           [Option('-a'), Argument(None, 1), Option('-x'),
-#            Option('-a'), Argument(None, 2)]) == \
-#                    (True, [Option('-x')], [Argument('N', 1), Argument('N', 2)])
-    assert match(OneOrMore(Optional(Argument('N'))), [Argument(None, 9)]) == \
-                    [Argument('N', 9)]
+# def test_one_or_more_match():
+#     #These tests rely on the behaviour WITHOUT fix_list_arguments
+#     #TODO: Use match method which does not fix for list arguments
+#     assert match(OneOrMore(Argument('N')), [Argument(None, 9)]) == (
+#             [Argument('N', 9)])
+#     assert match(OneOrMore(Argument('N')), []) == False
+#     assert match(OneOrMore(Argument('N')), [Option('-x')]) == False
+#             # (False, [Option('-x')], [])
+#     assert match(OneOrMore(Argument('N')),
+#             [Argument(None, 9), Argument(None, 8)]) == (
+#                     [Argument('N', 9), Argument('N', 8)])
+#     assert match(OneOrMore(Argument('N')),
+#             [Argument(None, 9), Option('-x'), Argument(None, 8)]) == (
+#                     [Argument('N', 9), Argument('N', 8)])
+#                     #True, [Option('-x')], [Argument('N', 9), Argument('N', 8)])
+#     assert match(OneOrMore(Option('-a')),
+#             [Option('-a'), Argument(None, 8), Option('-a')]) == []
+#                     # True, [Argument(None, 8)], [])
+#     assert match(OneOrMore(Option('-a')), [Argument(None, 8), Option('-x')]) == []
+#                     # False, [Argument(None, 8), Option('-x')], [])
+# #   NOTE, Option is greedy, nothing to match second time
+# #   assert match(OneOrMore(Required(Option('-a'), Argument('N'))),
+# #           [Option('-a'), Argument(None, 1), Option('-x'),
+# #            Option('-a'), Argument(None, 2)]) == \
+# #                    (True, [Option('-x')], [Argument('N', 1), Argument('N', 2)])
+#     assert match(OneOrMore(Optional(Argument('N'))), [Argument(None, 9)]) == \
+#                     [Argument('N', 9)]
 
 
 def test_list_argument_match():
@@ -342,22 +342,6 @@ def test_pattern_fix_list_arguments():
 def test_set():
     assert Argument('N') == Argument('N')
     assert set([Argument('N'), Argument('N')]) == set([Argument('N')])
-
-
-# def test_pattern_fix_identities_1():
-#     pattern = Required(Argument('N'), Argument('N'))
-#     assert pattern.children[0] == pattern.children[1]
-#     assert pattern.children[0] is not pattern.children[1]
-#     pattern.fix_identities()
-#     assert pattern.children[0] is pattern.children[1]
-
-
-# def test_pattern_fix_identities_2():
-#     pattern = Required(Optional(Argument('X'), Argument('N')), Argument('N'))
-#     assert pattern.children[0].children[1] == pattern.children[1]
-#     assert pattern.children[0].children[1] is not pattern.children[1]
-#     pattern.fix_identities()
-#     assert pattern.children[0].children[1] is pattern.children[1]
 
 
 def test_long_options_error_handling():
