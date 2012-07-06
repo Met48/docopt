@@ -16,7 +16,7 @@ def test_pattern_flat():
 
 #Convenience function for option / argument defaults
 def descriptor_parse(s, argument=False):
-    return parse_doc_descriptors('\n' + s)[argument]
+    return parse_doc_descriptors(s)[argument]
 
 
 def test_option():
@@ -60,6 +60,17 @@ def test_argument_defaults():
         [Argument('<arg>', '5'), Argument('<arg2>', '5')]
     assert descriptor_parse('<arg>, <arg2>  [default: 5]', True) == \
         [Argument('<arg>', '5'), Argument('<arg2>', '5')]
+    assert descriptor_parse('SPEED  Desc1\nDesc2[default: 5]', True) == \
+        [Argument('SPEED', '5')]
+
+
+def test_multiple_defaults():
+    assert parse_doc_descriptors('-h TOPIC\n<speed>  [default: 5]') == \
+        ([Option('-h', None, 1)], [Argument('<speed>', '5')])
+    assert parse_doc_descriptors('ARG1  Desc\n--speed=<kn>\nARG2  Desc') == \
+        ([Option(None, '--speed', 1)], [])
+    assert parse_doc_descriptors('PATH  [default: ./]\n--verbose') == \
+        ([Option(None, '--verbose')], [Argument('PATH', './')])
 
 
 def test_option_name():

@@ -447,28 +447,33 @@ def parse_doc_descriptors(doc):
             #Ignore text within a usage section
             continue
         else:
-            #Handle case where option description is on first line
-            line_start = r'(?<=\n)'
-            if not header.strip():
-                line_start += '|^'
+            #Split by option descriptors
+            option_descriptors = re.split(r'(?m)^\s*-', content)
+            option_descriptors = (option_descriptors[0:1]
+                + ['-' + x for x in option_descriptors[1:]])
 
-            #Find all lines with option / argument descriptions
-            descriptors = re.findall(r'''
-                (?:%s)  # Replaced with line_start from above
-                ((?:\ \ |\t)*)  # Capture any indentation
-                (
-                    .+  # Description text
-                    # Match following lines that have higher indentation
-                    (?:
-                        \n
-                        \1  # First line indentation
-                        (?:\ \ |\t)+  # Additional indentation
-                        .*  # Additional description text
-                    )*
-                )
-            ''' % line_start, content, re.X)
+            #Split each option descriptor by argument descriptors
+            descriptors = []
+            for item in option_descriptors:
+                lines = item.split('\n')
+                descriptor = ['']
+                for line in lines:
+                    line = line.lstrip()
+                    arg = line.replace(',', ' ').split()
+                    if not arg:
+                        continue
+                    else:
+                        arg = arg[0]
+                    if arg.startswith('<') and arg.endswith('>') or arg.isupper():
+                        descriptor.append('')
+                    descriptor[-1] += '\n' + line
+                descriptors.append(descriptor)
 
-            for indent, descriptor in descriptors:
+            #Flatten list of lists
+            descriptors = [item for sublist in descriptors for item in sublist]
+
+            #Parse each descriptor
+            for descriptor in descriptors:
                 #Partition descriptor
                 terms, description = '', ''
                 parts = re.split(r'  |\t', descriptor, 1)
